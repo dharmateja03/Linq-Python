@@ -116,12 +116,20 @@ class HTTPTransport:
         http_client: httpx.Client | None = None,
         default_headers: Mapping[str, str] | None = None,
     ) -> None:
+        if max_retries < 0:
+            raise ValueError("max_retries cannot be negative")
+
         self._api_key = api_key
         self._timeout = timeout
         self._max_retries = max_retries
 
         self._owns_client = http_client is None
-        self._client = http_client or httpx.Client(base_url=base_url, timeout=timeout)
+        normalized_base_url = httpx.URL(base_url)
+        if normalized_base_url.path and not normalized_base_url.path.endswith("/"):
+            normalized_base_url = normalized_base_url.copy_with(path=f"{normalized_base_url.path}/")
+        self._base_url = normalized_base_url
+
+        self._client = http_client or httpx.Client(base_url=str(self._base_url), timeout=timeout)
 
         self._base_headers = {
             "User-Agent": f"LinqAPIV3/Python {__version__}",
@@ -171,6 +179,8 @@ class HTTPTransport:
         max_retries = self._max_retries
         if options and options.max_retries is not None:
             max_retries = options.max_retries
+        if max_retries < 0:
+            raise ValueError("max_retries cannot be negative")
 
         final_query: dict[str, Any] = {}
         if query:
@@ -202,9 +212,12 @@ class HTTPTransport:
                 attempt_headers["X-Stainless-Retry-Count"] = str(attempt)
 
             try:
+                raw_url = httpx.URL(path)
+                url = raw_url if raw_url.is_absolute_url else self._base_url.join(path.lstrip("/"))
+
                 response = self._client.request(
                     method=method,
-                    url=path.lstrip("/"),
+                    url=url,
                     params=final_query or None,
                     headers=attempt_headers,
                     content=request_content,

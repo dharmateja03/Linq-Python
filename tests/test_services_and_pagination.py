@@ -34,6 +34,20 @@ def test_chat_auto_paging_uses_cursor():
     assert any("cursor=n1" in path for path in seen_paths)
 
 
+def test_chat_pagination_empty_page_stops_even_if_cursor_present():
+    calls = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"chats": [], "next_cursor": "n1"})
+
+    client = _sdk_client(handler)
+    page = client.chats.list({"limit": 1})
+    assert page.get_next_page() is None
+    assert calls == 1
+
+
 def test_service_paths_and_methods():
     calls = []
 
@@ -72,3 +86,19 @@ def test_webhook_signature_verification():
 
     assert client.webhooks.verify_signature(secret, payload, timestamp, signature)
     assert not client.webhooks.verify_signature(secret, payload, timestamp, "bad-signature")
+
+
+def test_webhook_header_verification_is_case_insensitive():
+    client = Client(api_key="test_key")
+
+    payload = json.dumps({"event": "message.sent"}, separators=(",", ":")).encode("utf-8")
+    timestamp = str(int(time.time()))
+    secret = "whsec_test"
+    message = f"{timestamp}.".encode() + payload
+    signature = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+    assert client.webhooks.verify_headers(
+        secret,
+        payload,
+        {"x-webhook-timestamp": timestamp, "x-webhook-signature": signature},
+    )

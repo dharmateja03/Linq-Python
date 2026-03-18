@@ -62,8 +62,10 @@ class WebhooksService:
         *,
         max_age_seconds: int | None = 300,
     ) -> bool:
-        timestamp = headers.get("X-Webhook-Timestamp", "")
-        signature = headers.get("X-Webhook-Signature", "")
+        normalized_headers = {str(k).lower(): str(v) for k, v in headers.items()}
+
+        timestamp = normalized_headers.get("x-webhook-timestamp", "")
+        signature = normalized_headers.get("x-webhook-signature", "")
         if not timestamp or not signature:
             return False
         return self.verify_signature(

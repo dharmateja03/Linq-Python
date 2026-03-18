@@ -34,6 +34,8 @@ class CursorPage(Generic[T]):
         return str(cursor)
 
     def get_next_page(self) -> CursorPage[T] | None:
+        if len(self.items) == 0:
+            return None
         cursor = self.next_cursor
         if not cursor:
             return None

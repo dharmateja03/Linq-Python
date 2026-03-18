@@ -3,7 +3,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from linq import APIError, Client
+from linq import APIError, Client, RequestOptions
 
 
 def _sdk_client(handler, **kwargs):
@@ -58,3 +58,40 @@ def test_retry_after_ms_retries_three_attempts(monkeypatch):
         client.chats.create({"from": "+1", "to": ["+2"], "message": {"parts": []}})
 
     assert attempts == 3
+
+
+def test_custom_http_client_without_base_url_still_uses_client_base_url():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        return httpx.Response(200, json={"ok": True})
+
+    # Intentionally no base_url on the provided client.
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = Client(
+        api_key="test_key",
+        base_url="https://api.linqapp.com/api/partner",
+        http_client=http_client,
+    )
+
+    client.chats.create({"from": "+1", "to": ["+2"], "message": {"parts": []}})
+
+    assert seen["path"] == "/api/partner/v3/chats"
+
+
+def test_negative_retries_are_rejected():
+    with pytest.raises(ValueError, match="max_retries cannot be negative"):
+        Client(api_key="test_key", max_retries=-1)
+
+
+def test_negative_request_retries_are_rejected():
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True})
+
+    client = _sdk_client(handler)
+    with pytest.raises(ValueError, match="max_retries cannot be negative"):
+        client.chats.create(
+            {"from": "+1", "to": ["+2"], "message": {"parts": []}},
+            options=RequestOptions(max_retries=-1),
+        )
